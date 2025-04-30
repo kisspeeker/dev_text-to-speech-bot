@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  tts-bot:
+    build: .
+    image: dev/tts-bot
+    restart: always
+    ports:
+      - 3008:80
+    env_file: ./.env

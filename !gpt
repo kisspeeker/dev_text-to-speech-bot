@@ -1,0 +1,117 @@
+import { Telegraf, Markup } from 'telegraf';
+import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
+import googleTTS from 'google-tts-api';
+import * as gTTS from 'gtts';
+import * as say from 'say';
+import axios from 'axios';
+import * as ffmpeg from 'fluent-ffmpeg';
+import * as ffmpegPath from 'ffmpeg-static';
+
+dotenv.config();
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const VOICERSS_API_KEY = process.env.VOICERSS_API_KEY;
+
+ffmpeg.setFfmpegPath(ffmpegPath as string);
+
+const bot = new Telegraf(BOT_TOKEN);
+const services = ['google-tts-api', 'gtts', 'say', 'voicerss'];
+const userState = new Map();
+
+bot.start((ctx) => {
+  ctx.reply('Выбери сервис TTS:', Markup.keyboard(services).oneTime().resize());
+  userState.set(ctx.from.id, { step: 'choose_service' });
+});
+
+bot.on('text', async (ctx) => {
+  const state = userState.get(ctx.from.id) || {};
+  const text = ctx.message.text;
+
+  if (state.step === 'choose_service') {
+    if (!services.includes(text)) return ctx.reply('Выбери сервис из списка.');
+    state.service = text;
+    state.step = 'choose_language';
+    userState.set(ctx.from.id, state);
+    return ctx.reply('Выбери язык (например, ru, en, de):');
+  }
+
+  if (state.step === 'choose_language') {
+    state.lang = text.toLowerCase();
+    state.step = 'enter_text';
+    userState.set(ctx.from.id, state);
+    return ctx.reply('Отправь текст для озвучки:');
+  }
+
+  if (state.step === 'enter_text') {
+    const outputFile = `tts_${ctx.from.id}_${Date.now()}.mp3`;
+    ctx.reply('🎤 Генерация аудио...');
+
+    try {
+      if (state.service === 'google-tts-api') {
+        await generateGoogleTTS(text, state.lang, outputFile);
+      } else if (state.service === 'gtts') {
+        await generateGTTS(text, state.lang, outputFile);
+      } else if (state.service === 'say') {
+        await generateSay(text, outputFile);
+      } else if (state.service === 'voicerss') {
+        await generateVoiceRSS(text, state.lang, outputFile);
+      }
+      await ctx.replyWithAudio({ source: outputFile });
+      fs.unlinkSync(outputFile);
+    } catch (err) {
+      console.error(err);
+      ctx.reply('Ошибка при генерации аудио.');
+    }
+
+    userState.delete(ctx.from.id);
+  }
+});
+
+async function generateGoogleTTS(text: string, lang: string, output: string) {
+  const urls = await googleTTS.getAllAudioUrls(text, { lang });
+  const audioBuffers = [];
+  for (const { url } of urls) {
+    const res = await axios.get(url, { responseType: 'arraybuffer' });
+    audioBuffers.push(Buffer.from(res.data));
+  }
+  fs.writeFileSync(output, Buffer.concat(audioBuffers));
+}
+
+async function generateGTTS(text: string, lang: string, output: string) {
+  return new Promise((resolve, reject) => {
+    const gtts = new gTTS(text, lang);
+    gtts.save(output, (err: any) => (err ? reject(err) : resolve(null)));
+  });
+}
+
+async function generateSay(text: string, output: string) {
+  const wavOutput = output.replace('.mp3', '.wav');
+  return new Promise((resolve, reject) => {
+    say.export(text, null, 1.0, wavOutput, async (err: any) => {
+      if (err) return reject(err);
+      try {
+        await convertWavToMp3(wavOutput, output);
+        fs.unlinkSync(wavOutput);
+        resolve(null);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+async function generateVoiceRSS(text: string, lang: string, output: string) {
+  const url = `https://api.voicerss.org/?key=${VOICERSS_API_KEY}&hl=${lang}&src=${encodeURIComponent(text)}&c=MP3&f=44khz_16bit_stereo`;
+  const res = await axios.get(url, { responseType: 'arraybuffer' });
+  fs.writeFileSync(output, Buffer.from(res.data));
+}
+
+function convertWavToMp3(input: string, output: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(input).output(output).audioCodec('libmp3lame').on('end', resolve).on('error', reject).run();
+  });
+}
+
+bot.launch();
