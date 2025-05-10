@@ -1,6 +1,5 @@
 import { Router } from '@grammyjs/router';
-import { routeConfig as mainRouteConfig } from 'src/telegram/router/main';
-import { routeConfig as adminRouteConfig } from 'src/telegram/router/admin';
+import { routes } from 'src/telegram/router/routes';
 import { AppContext } from 'src/telegram/types';
 import { AppRouteConfig } from 'src/telegram/models/app-route-config.model';
 import { AppRouteName } from 'src/telegram/constants';
@@ -21,8 +20,13 @@ const setupRoute = (routeConfig: AppRouteConfig) => {
       .command(routeCommand.command, routeCommand.handler);
   });
 
+  routeConfig.texts.forEach((routeTexts) => {
+    currentRoute
+      .filter(routeTexts.guard)
+      .on(':text', routeTexts.handler);
+  });
+
   ROUTE_COMMANDS_MAP.set(routeConfig.routeName, routeConfig.commands);
 };
 
-setupRoute(mainRouteConfig);
-setupRoute(adminRouteConfig);
+routes.forEach(setupRoute);

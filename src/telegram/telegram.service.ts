@@ -11,12 +11,16 @@ import {
 } from 'src/telegram/middleware';
 import { createDefaultSession } from 'src/telegram/helpers';
 import { router } from 'src/telegram/router';
+import { TTSService } from 'src/tts/tts.service';
 
 @Injectable()
 export class TelegramService {
   private bot: Bot;
 
-  constructor(private config: ConfigService) {
+  constructor(
+    private ttsService: TTSService,
+    private config: ConfigService,
+  ) {
     this.bot = new Bot<AppContext>(this.botToken, BOT_OPTIONS);
   }
 
@@ -40,6 +44,11 @@ export class TelegramService {
     this.botInstance.use(
       (ctx: AppContext, next) =>
         underConstructionMiddleware(this.isUnderConstruction, ctx, next),
+      (ctx: AppContext, next) => {
+        ctx.ttsService = this.ttsService;
+
+        return next();
+      },
       session(createDefaultSession()),
       parseUserMiddleware,
       updateCommandsMiddleware,
@@ -49,6 +58,7 @@ export class TelegramService {
 
   async startBot() {
     this.setupMiddleware();
+
     return this.botInstance.start();
   }
 }

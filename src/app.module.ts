@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import config from 'src/config';
 import { TelegramModule } from 'src/telegram/telegram.module';
+import { TTSModule } from 'src/tts/tts.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { TelegramModule } from 'src/telegram/telegram.module';
       load: [config],
     }),
     TelegramModule,
+    TTSModule,
   ],
 })
 export class AppModule {
